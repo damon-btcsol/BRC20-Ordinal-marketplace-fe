@@ -1,105 +1,110 @@
-import { type Network } from "bitcoinjs-lib";
-import { testnet } from "bitcoinjs-lib/src/networks";
 import { IInscription } from "@/types/inscription";
+import axios, { AxiosError } from "axios";
 
+const unisat_api_key = process.env.NEXT_PUBLIC_UNISAT_API_KEY;
+const backend_api_base_url = process.env.NEXT_PUBLIC_BACEEND_URL;
 
-export const getInscriptions = async (
-  address: string,
-  network: Network
-): Promise<IInscription[]> => {
-  const basePath = network === testnet ? "testnet/" : "";
-  const url = `/${basePath}wallet-api-v4/address/inscriptions?address=${address}&cursor=0&size=100`;
-  console.log("Requesting URL:", url); // Log the URL being requested
-
-  const res = await fetch(url);
-  const text = await res.text(); // First get the response as text to check what's coming back
-  console.log("Server response:", text); // Log the raw response text
-
+const fetchContentData = async (contentUrl: string): Promise<any> => {
   try {
-    const inscriptionDatas = JSON.parse(text); // Try to parse the text as JSON
-    const inscriptions: IInscription[] = [];
-    inscriptionDatas.result.list.forEach((inscriptionData: any) => {
-      inscriptions.push({
-        address: inscriptionData.address,
-        inscriptionId: inscriptionData.inscriptionId,
-        inscriptionNumber: inscriptionData.inscriptionNumber,
-        output: inscriptionData.output,
-        outputValue: inscriptionData.outputValue,
-        content: inscriptionData.content,
-        price: 0,
-        tokenTicker: "",
-      });
-    });
-
-    return inscriptions;
+    const response = await axios.get(contentUrl);
+    return response.data;
   } catch (error) {
-    console.error("Error parsing JSON:", error);
-    throw error; // Rethrow to handle it in the component if needed
+    console.error("Error fetching content data:", error);
+    return null;
   }
 };
 
-export const getListedInscriptions = async () => {
-  const testData = [
-    {
-      address: "string1",
-      inscriptionId: "string",
-      inscriptionNumber: 398433,
-      output: "string",
-      outputValue: 87987,
-      content:
-        "https://static-testnet.unisat.io/content/1bfcfc75338cb542d7f8d265d0d3a82abe7797f9328c5504a50c60b241c8bb88i0",
-      price: 987987,
-      tokenTicker: "TSNT",
-    },
-    {
-      address: "string2",
-      inscriptionId: "string",
-      inscriptionNumber: 398433,
-      output: "string",
-      outputValue: 87987,
-      content:
-        "https://static-testnet.unisat.io/content/1bfcfc75338cb542d7f8d265d0d3a82abe7797f9328c5504a50c60b241c8bb88i0",
-      price: 987987,
-      tokenTicker: "TSNT",
-    },
-    {
-      address: "string3",
-      inscriptionId: "string",
-      inscriptionNumber: 398433,
-      output: "string",
-      outputValue: 87987,
-      content:
-        "https://static-testnet.unisat.io/content/1bfcfc75338cb542d7f8d265d0d3a82abe7797f9328c5504a50c60b241c8bb88i0",
-      price: 987987,
-      tokenTicker: "TSNT",
-    },
-    {
-      address: "string4",
-      inscriptionId: "string",
-      inscriptionNumber: 398433,
-      output: "string",
-      outputValue: 87987,
-      content:
-        "https://static-testnet.unisat.io/content/1bfcfc75338cb542d7f8d265d0d3a82abe7797f9328c5504a50c60b241c8bb88i0",
-      price: 987987,
-      tokenTicker: "TSNT",
-    },
-  ];
+export const getInscriptions = async (
+  address: string
+): Promise<IInscription[]> => {
+  const initialResponse = await window.unisat.getInscriptions(0, 100);
 
-  return testData;
+  const res: IInscription[] = [];
+  for (const inscription of initialResponse.list) {
+    const contentData = await fetchContentData(inscription.content);
+    if (contentData && !contentData.tick) {
+      res.push({
+        address: address,
+        pubkey: "",
+        inscriptionId: inscription.inscriptionId,
+        inscriptionNumber: inscription.inscriptionNumber,
+        content: inscription.content,
+        price: 0,
+        tokenTicker: "TSNT",
+      });
+    }
+  }
+
+  const listedInscriptions: IInscription[] =
+    await getListedInscriptionsByAddress(address);
+
+  listedInscriptions.forEach((inscription) => {
+    for (let i = 0; i < res.length; i++) {
+      if (res[i].inscriptionId == inscription.inscriptionId)
+        res[i].price = inscription.price;
+    }
+  });
+
+  return res;
 };
 
-export const getInscriptionById = async (id: string) => {
-  const inscription = {
-    address: "string1",
-    inscriptionId: "string",
-    inscriptionNumber: 398433,
-    output: "string",
-    outputValue: 87987,
-    content:
-      "https://static-testnet.unisat.io/content/1bfcfc75338cb542d7f8d265d0d3a82abe7797f9328c5504a50c60b241c8bb88i0",
-    price: 987987,
-    tokenTicker: "TSNT",
+export const getListedInscriptionsByAddress = async (
+  address: string
+): Promise<IInscription[]> => {
+  const url = `${backend_api_base_url}/api/inscription/address/${address}`;
+  try {
+    const response = await axios.get(url);
+    if (response.data.success) {
+      return response.data.inscriptions;
+    }
+    return [];
+  } catch (error) {
+    console.log("Error fetching content data =>", error);
+    return [];
+  }
+};
+
+export const getListedInscriptions = async (): Promise<IInscription[]> => {
+  const url = `${backend_api_base_url}/api/inscription/all`;
+
+  try {
+    const res = await axios.get(url);
+    return res.data.inscriptions;
+  } catch (error) {
+    console.log("Get all listed inscription error.");
+    return [];
+  }
+};
+
+export const getInscriptionById = async (id: string, address: string) => {
+  let inscription: IInscription = {
+    address: "",
+    pubkey: "",
+    inscriptionId: "",
+    inscriptionNumber: 0,
+    content: "",
+    price: 0,
+    tokenTicker: "",
   };
+
+  const url = `${backend_api_base_url}/api/inscription/inscriptionid/${id}`;
+
+  try {
+    const response = await axios.get(url);
+    if (response.data.success) {
+      inscription = response.data.inscription;
+    }
+  } catch (error: any) {
+    console.log("Error fetching content error:", error.response.data.error);
+  }
+
+
+  if (inscription.inscriptionId === "") {
+    const inscriptions = await getInscriptions(address);
+    inscriptions.forEach((item) => {
+      if (item.inscriptionId === id) inscription = item;
+    });
+  }
+
   return inscription;
 };
